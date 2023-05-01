@@ -1,0 +1,22 @@
+# PERO -> Como no todos los nombres de paises estan en un formato reconocible por la libreria countrycode.
+# voy a corregirlos usando ChatGPT. 
+# Para eso necesito copiar la lista de países a mi portapapeles usando la funcion writeClipboard del paquete clipr.
+# No es necesario que usted realice este paso, ya que es solo a modo demostrativo.
+clipr::write_clip(row.names(datos_ready))
+
+# Copie y pegue esta lista en ChatGPT para que corrija aquellos que no son compatibles con la librería countrycode.
+# Le pedi que me genere un CSV con esa lista actualizada. Ahora cargo ese CSV a R.
+# Tengo que hacer un paso previo para que no interprete las comas de algunos nombres, 
+# y que solo tome las nuevas lineas como referencia.
+csv_lines <- readLines("lista-compatible-nombre-paises.csv")
+csv_rows <- strsplit(csv_lines, "\n")
+nombres_paises_actualizados <- data.frame(country_name = unlist(csv_rows), stringsAsFactors = FALSE)
+
+# Si el número de filas corresponde con el data set original, los actualizo.
+datos_newnames <- datos_ready
+if (nrow(nombres_paises_actualizados) == nrow(datos_newnames)) {
+  # Update the row names of the original dataset using the new country names
+  rownames(datos_newnames) <- nombres_paises_actualizados[, 1]
+} else {
+  cat("El número de filas no se corresponde entre ambas listas.")
+}
