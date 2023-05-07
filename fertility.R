@@ -13,18 +13,25 @@ install.packages("reshape2")
 install.packages("countrycode")
 install.packages("clipr")
 install.packages("tidyr")
+install.packages("rnaturalearth")
+install.packages("rnaturalearthdata")
+install.packages("ggrepel")
+
 
 library(ggplot2)
 library(reshape2)
 library(countrycode)
 library(clipr)
 library(tidyr)
+library(rnaturalearth)
+library(dplyr)
+library(ggrepel)
 
 # Cargamos el dataset API_SP.DYN.TFRT.IN_DS2_en_csv_v2_5358686.csv. Evito las primeras 3 filas que poseen metadatos innecesarios.
 datos_raw <- read.csv("API_SP.DYN.TFRT.IN_DS2_en_csv_v2_5358686.csv", skip = 3, header = TRUE)
 
 # Eliminamos ciertas columnas con más metadatos innecesarios para mi gráfico, usando la función "subset."
-datos_clean <- subset(datos_raw, select = -c(2:4))
+datos_clean <- subset(datos_raw, select = -c(3:4))
 # También eliminamos columnas que no poseen datos, que en este caso son solo 2 años al final de la tabla.
 # Pisamos el data frame solo en este caso por ser parte del mismo "paso" y para no crear tantos data frames innecesarios.
 datos_clean <- datos_clean[, !apply(is.na(datos_clean), 2, all)]
@@ -54,7 +61,11 @@ datos_por_continente$Continent <- NA
 # Al usar la librería countrycode voy a realizar 2 pasos: 
 # Asignar un continente a cada país válido, 
 # y asignar NA como continente a aquellas filas que no sean países.
-datos_por_continente$Continent <- countrycode(datos_por_continente$Country.Name, origin = "country.name", destination = "continent", nomatch = NA)
+# Producira un WARNING en consola por aquellos valores invalidos.
+datos_por_continente$Continent <- countrycode(datos_por_continente$Country.Code,
+                                              origin = "iso3c",
+                                              destination = "continent",
+                                              nomatch = NA)
 
 # Muevo la columna continente al comienzo del data frame
 datos_por_continente <- datos_por_continente[, c(ncol(datos_por_continente), 1:(ncol(datos_por_continente)-1))]
@@ -63,12 +74,12 @@ datos_por_continente <- datos_por_continente[, c(ncol(datos_por_continente), 1:(
 datos_por_continente <- na.omit(datos_por_continente)
 
 # Finalmente, agrupo las filas por continente calculando la media aritmética de cada uno, omitiendo los valores NA
-columnas_year <- colnames(datos_por_continente)[!colnames(datos_por_continente) %in% c("Country.Name", "Continent")]
+columnas_year <- colnames(datos_por_continente)[!colnames(datos_por_continente) %in% c("Country.Name", "Country.Code", "Continent")]
 
 # Create a new data frame with one row per continent, calculating the arithmetic mean for each year
 media_aritmetica_por_year <- aggregate(datos_por_continente[columnas_year],
-                                    by = list(Continent = datos_por_continente$Continent),
-                                    FUN = mean, na.rm = TRUE)
+                                       by = list(Continent = datos_por_continente$Continent),
+                                       FUN = mean, na.rm = TRUE)
 
 # Reformateamos el data frame a formato "long" usando melt para que sea compatible con las funciones de ploteo de ggplot2
 # Esto nos servira para generar nuestro gráfico estilo "heatmap."
@@ -105,3 +116,25 @@ heatmap <- ggplot(long_data, aes(x = Year, y = Continent, fill = Value)) +
 print(heatmap)
 
 
+# Identify the year columns and other columns you want to keep
+year_columns <- colnames(datos_ready)[3:ncol(datos_ready)]
+keep_columns <- c("Country.Name", "Country.Code")
+
+# Calculate the row-wise average for the year columns
+row_average <- rowMeans(datos_ready[year_columns], na.rm = TRUE)
+
+# Create a new data frame with the desired columns and the calculated average
+datos_avg <- data.frame(datos_ready[keep_columns], Average = row_average)
+
+# Get the world map data using the rnaturalearth library
+world_map <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Merge the world map data with the datos_avg data frame using the ISO3C country codes
+world_map_avg <- merge(world_map, datos_avg, by.x = "iso_a3", by.y = "Country.Code")
+
+# Create a map plot with ggplot2, using colors to represent the average values
+ggplot(data = world_map_avg) +
+  geom_sf(aes(fill = Average)) +
+  scale_fill_gradient(low = "lightblue", high = "darkred", na.value = "gray90", name = "Average") +
+  theme_minimal() +
+  ggtitle("Average values by country")
