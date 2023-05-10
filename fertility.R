@@ -16,7 +16,10 @@ install.packages("tidyr")
 install.packages("rnaturalearth")
 install.packages("rnaturalearthdata")
 install.packages("ggrepel")
-
+install.packages("ggplot2")
+install.packages("sf")
+install.packages("ggiraph")
+install.packages("plotly")
 
 library(ggplot2)
 library(reshape2)
@@ -26,6 +29,10 @@ library(tidyr)
 library(rnaturalearth)
 library(dplyr)
 library(ggrepel)
+library(ggiraph)
+library(plotly)
+library(sf)
+library(gridExtra)
 
 # Cargamos el dataset API_SP.DYN.TFRT.IN_DS2_en_csv_v2_5358686.csv. Evito las primeras 3 filas que poseen metadatos innecesarios.
 datos_raw <- read.csv("API_SP.DYN.TFRT.IN_DS2_en_csv_v2_5358686.csv", skip = 3, header = TRUE)
@@ -94,7 +101,7 @@ long_data$Year <- factor(long_data$Year, levels = unique(long_data$Year))
 # imprimiento solo 1 etiqueta cada 10 años (a pesar de que el gráfico contiene información con granularidad de cada año.)
 heatmap <- ggplot(long_data, aes(x = Year, y = Continent, fill = Value)) +
   geom_tile(color = NA) +
-  scale_fill_gradient2(name = "Tasa", low = "white", mid = "lightyellow", high = "orange", midpoint = median(long_data$Value), guide = "colorbar") +
+  scale_fill_gradient2(name = "Tasa", low = "lightblue", mid = "lightyellow", high = "orange", midpoint = median(long_data$Value), guide = "colorbar") +
   theme_minimal() +
   theme(
     axis.text.x = element_text(angle = 65, vjust = 0.5, hjust=1),
@@ -109,20 +116,15 @@ heatmap <- ggplot(long_data, aes(x = Year, y = Continent, fill = Value)) +
     labels <- gsub("^X", "", x)
     ifelse(seq_along(labels) == 1 | (seq_along(labels) - 1) %% 10 == 0, labels, "")
   }) +
-  ggtitle("Tasa de fertilidad mundial") +
+  ggtitle("Tasa de fertilidad mundial (1960 - 2020)") +
   labs(caption = "Nacimientos por mujer desde 1960")
-
-# Mostar el heatmap
-print(heatmap)
-
 
 # Identify the year columns and other columns you want to keep
 year_columns <- colnames(datos_ready)[3:ncol(datos_ready)]
 keep_columns <- c("Country.Name", "Country.Code")
 
 # Calculate the row-wise average for the year columns
-row_average <- rowMeans(datos_ready[year_columns], na.rm = TRUE)
-
+row_average <- round(rowMeans(datos_ready[year_columns], na.rm = TRUE), 2)
 # Create a new data frame with the desired columns and the calculated average
 datos_avg <- data.frame(datos_ready[keep_columns], Average = row_average)
 
@@ -133,8 +135,41 @@ world_map <- ne_countries(scale = "medium", returnclass = "sf")
 world_map_avg <- merge(world_map, datos_avg, by.x = "iso_a3", by.y = "Country.Code")
 
 # Create a map plot with ggplot2, using colors to represent the average values
-ggplot(data = world_map_avg) +
+map_plot <- ggplot(data = world_map_avg) +
   geom_sf(aes(fill = Average)) +
-  scale_fill_gradient(low = "lightblue", high = "darkred", na.value = "gray90", name = "Average") +
+  scale_fill_gradient(low = "lightblue", high = "orange", na.value = "gray90", name = "Average") +
   theme_minimal() +
-  ggtitle("Average values by country")
+  ggtitle("Promedio de fertilidad por Paises (1960 - 2020)")
+
+# Convert the ggplot map to a plotly object and add hover labels
+ggplotly(tooltip = c("name_long", "Average"), label = world_map_avg$name_long, source = "A") %>% 
+  layout(hovermode = "closest") %>% 
+  config(displayModeBar = FALSE)
+
+# Ordenar el dataset de mayor a menor promedio
+top_paises <- datos_avg[order(datos_avg$Average, decreasing = TRUE), ]
+
+# Tomar los primeros 5 países con mayor promedio y solo la columna de país
+top_5 <- top_paises[1:5, "Country.Name"]
+
+# Ordenar el dataset de menor a mayor promedio
+peores_paises <- datos_avg[order(datos_avg$Average, decreasing = FALSE), ]
+
+# Tomar los primeros 5 países con menor promedio y solo la columna de país
+peores_5 <- peores_paises[1:5, "Country.Name"]
+
+# Crear dos tablas con los vectores de país
+tabla1 <- data.frame(País = peores_5)
+tabla2 <- data.frame(País = top_5)
+
+# Nombrar las tablas apropiadamente
+names(tabla1) <- "Paises con menor tasa de fertilidad"
+names(tabla2) <- "Paises con mayor tasa de fertilidad"
+
+# Crear dos tablas de texto con los vectores
+texto1 <- tableGrob(tabla1)
+texto2 <- tableGrob(tabla2)
+
+grid_objeto <- grid.arrange(heatmap, map_plot, texto1, texto2, 
+                            ncol = 2, nrow = 2, heights = c(2, 2), widths = c(4, 4))
+
